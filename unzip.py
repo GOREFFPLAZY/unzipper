@@ -1,158 +1,176 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+import customtkinter as ctk
+from tkinter import filedialog, messagebox
 import zipfile
 import os
 import threading
 
-class ModernWinRARClone:
-    def __init__(self, master):
-        self.master = master
-        self.master.title("unzipper")
-        self.master.geometry("520x330")
-        self.master.resizable(False, False)
 
-        self.style = ttk.Style()
-        self.master.tk.call("source", "azure.tcl")  # Optional: use a theme file
-        self.style.theme_use("clam")  # Looks more modern than default "vista"
+class WinRARCloneApp(ctk.CTk):
+    """A minimalist ZIP extractor/creator rebuilt with CustomTkinter for a modern look."""
 
-        # Customize style
-        self.style.configure("TNotebook.Tab", padding=[12, 6], font=("Segoe UI", 10))
-        self.style.configure("TButton", font=("Segoe UI", 10), padding=6)
-        self.style.configure("TProgressbar", thickness=20)
+    def __init__(self):
+        super().__init__()
 
-        self.tab_control = ttk.Notebook(master)
+        #Window config
+        self.title("Biggies unzipper")
+        self.geometry("520x380")
+        self.resizable(False, False)
 
-        self.extract_tab = ttk.Frame(self.tab_control)
-        self.zip_tab = ttk.Frame(self.tab_control)
+        # Optional appearance settings
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("dark-blue")
 
-        self.tab_control.add(self.extract_tab, text='📂 Extract ZIP')
-        self.tab_control.add(self.zip_tab, text='🗜 Create ZIP')
-        self.tab_control.pack(expand=1, fill="both", padx=10, pady=10)
+        # --- Tabs -
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.pack(expand=True, fill="both", padx=10, pady=10)
 
-        self.setup_extract_tab()
-        self.setup_zip_tab()
+        self.extract_tab = self.tabview.add("Extract ZIP")
+        self.zip_tab = self.tabview.add("Create ZIP")
 
-    # ==== Extract Tab ====
-    def setup_extract_tab(self):
-        self.zip_path = tk.StringVar()
-        self.extract_path = tk.StringVar()
+        # Build UI for each tab
+        self._setup_extract_tab()
+        self._setup_zip_tab()
 
-        self.build_entry_row(self.extract_tab, "ZIP File:", self.zip_path, self.browse_zip)
-        self.build_entry_row(self.extract_tab, "Extract To:", self.extract_path, self.browse_extract_folder)
+    # === Extract TAB ===
+    def _setup_extract_tab(self):
+        self.zip_path = ctk.StringVar()
+        self.extract_path = ctk.StringVar()
 
-        ttk.Button(self.extract_tab, text="Extract", command=self.start_extraction).pack(pady=10)
+        # Select ZIP file
+        ctk.CTkLabel(self.extract_tab, text="Select ZIP File:").pack(anchor="w", pady=(8, 0))
+        zip_frame = ctk.CTkFrame(self.extract_tab, fg_color="transparent")
+        zip_frame.pack(fill="x")
+        ctk.CTkEntry(zip_frame, textvariable=self.zip_path).pack(side="left", expand=True, fill="x", padx=(0, 6))
+        ctk.CTkButton(zip_frame, text="Browse", command=self._browse_zip).pack(side="right")
 
-        self.progress_bar_extract = ttk.Progressbar(self.extract_tab, length=400, mode='determinate')
-        self.progress_bar_extract.pack(pady=(10, 0))
-        self.status_label_extract = tk.Label(self.extract_tab, text="", fg="blue")
-        self.status_label_extract.pack()
+        #Select destination folder
+        ctk.CTkLabel(self.extract_tab, text="Select Destination Folder:").pack(anchor="w", pady=(10, 0))
+        dest_frame = ctk.CTkFrame(self.extract_tab, fg_color="transparent")
+        dest_frame.pack(fill="x")
+        ctk.CTkEntry(dest_frame, textvariable=self.extract_path).pack(side="left", expand=True, fill="x", padx=(0, 6))
+        ctk.CTkButton(dest_frame, text="Browse", command=self._browse_folder).pack(side="right")
 
-    def browse_zip(self):
+        #Action button & progress
+        ctk.CTkButton(self.extract_tab, text="Extract", command=self._start_extraction, height=32).pack(pady=15)
+        self.progress_extract = ctk.CTkProgressBar(self.extract_tab, width=400)
+        self.progress_extract.pack(pady=6)
+        self.progress_extract.set(0)
+        self.status_extract = ctk.CTkLabel(self.extract_tab, text="")
+        self.status_extract.pack()
+
+    def _browse_zip(self):
         path = filedialog.askopenfilename(filetypes=[("ZIP files", "*.zip")])
         if path:
             self.zip_path.set(path)
 
-    def browse_extract_folder(self):
+    def _browse_folder(self):
         path = filedialog.askdirectory()
         if path:
             self.extract_path.set(path)
 
-    def start_extraction(self):
+    def _start_extraction(self):
         zip_file = self.zip_path.get()
-        extract_to = self.extract_path.get()
-        if not zip_file or not extract_to:
-            messagebox.showwarning("Missing Info", "Please select both a ZIP file and destination folder.")
+        dest = self.extract_path.get()
+        if not zip_file or not dest:
+            messagebox.showwarning("Missing Info", "Please select both a ZIP file and a destination folder.")
             return
+        self.status_extract.configure(text="Starting extraction…")
+        self.progress_extract.set(0)
+        threading.Thread(target=self._extract_zip, args=(zip_file, dest), daemon=True).start()
 
-        self.progress_bar_extract['value'] = 0
-        self.status_label_extract.config(text="Starting extraction...")
-        threading.Thread(target=self.extract_zip, args=(zip_file, extract_to), daemon=True).start()
-
-    def extract_zip(self, zip_path, extract_path):
+    def _extract_zip(self, zip_file: str, dest: str):
         try:
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                file_list = zip_ref.namelist()
-                total = len(file_list)
-                for i, file in enumerate(file_list, 1):
-                    zip_ref.extract(file, extract_path)
-                    percent = int((i / total) * 100)
-                    self.progress_bar_extract['value'] = percent
-                    self.status_label_extract.config(text=f"Extracting... {percent}%")
-                    self.master.update_idletasks()
-            self.status_label_extract.config(text="Extraction complete!")
-            messagebox.showinfo("Success", f"Extracted to:\n{extract_path}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Extraction failed:\n{e}")
+            with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                files = zip_ref.namelist()
+                total = len(files)
+                for i, file in enumerate(files, 1):
+                    zip_ref.extract(file, dest)
+                    percent = i / total
+                    self.progress_extract.set(percent)
+                    self.status_extract.configure(text=f"Extracting… {int(percent * 100)}%")
+                    self.update_idletasks()
 
-    # ==== ZIP Tab ====
-    def setup_zip_tab(self):
-        self.folder_to_zip = tk.StringVar()
-        self.zip_output_path = tk.StringVar()
+            self.status_extract.configure(text="Extraction complete ✅")
+            messagebox.showinfo("Success", f"Files extracted to:\n{dest}")
+        except Exception as err:
+            messagebox.showerror("Error", f"An error occurred:\n{err}")
 
-        self.build_entry_row(self.zip_tab, "Folder to ZIP:", self.folder_to_zip, self.browse_folder_to_zip)
-        self.build_entry_row(self.zip_tab, "Save ZIP As:", self.zip_output_path, self.choose_zip_save_location)
+    # == ZIP TAB ==
+    def _setup_zip_tab(self):
+        self.folder_to_zip = ctk.StringVar()
+        self.zip_output_path = ctk.StringVar()
 
-        ttk.Button(self.zip_tab, text="Create ZIP", command=self.start_zipping).pack(pady=10)
+        # Select folder
+        ctk.CTkLabel(self.zip_tab, text="Select Folder to ZIP:").pack(anchor="w", pady=(8, 0))
+        folder_frame = ctk.CTkFrame(self.zip_tab, fg_color="transparent")
+        folder_frame.pack(fill="x")
+        ctk.CTkEntry(folder_frame, textvariable=self.folder_to_zip).pack(side="left", expand=True, fill="x", padx=(0, 6))
+        ctk.CTkButton(folder_frame, text="Browse", command=self._browse_folder_to_zip).pack(side="right")
 
-        self.progress_bar_zip = ttk.Progressbar(self.zip_tab, length=400, mode='determinate')
-        self.progress_bar_zip.pack(pady=(10, 0))
-        self.status_label_zip = tk.Label(self.zip_tab, text="", fg="blue")
-        self.status_label_zip.pack()
+        #Save location
+        ctk.CTkLabel(self.zip_tab, text="Save ZIP As:").pack(anchor="w", pady=(10, 0))
+        save_frame = ctk.CTkFrame(self.zip_tab, fg_color="transparent")
+        save_frame.pack(fill="x")
+        ctk.CTkEntry(save_frame, textvariable=self.zip_output_path).pack(side="left", expand=True, fill="x", padx=(0, 6))
+        ctk.CTkButton(save_frame, text="Choose", command=self._choose_zip_save_location).pack(side="right")
 
-    def browse_folder_to_zip(self):
+        #Action button & progress
+        ctk.CTkButton(self.zip_tab, text="Create ZIP", command=self._start_zipping, height=32).pack(pady=15)
+        self.progress_zip = ctk.CTkProgressBar(self.zip_tab, width=400)
+        self.progress_zip.pack(pady=6)
+        self.progress_zip.set(0)
+        self.status_zip = ctk.CTkLabel(self.zip_tab, text="")
+        self.status_zip.pack()
+
+    def _browse_folder_to_zip(self):
         path = filedialog.askdirectory()
         if path:
             self.folder_to_zip.set(path)
 
-    def choose_zip_save_location(self):
+    def _choose_zip_save_location(self):
         path = filedialog.asksaveasfilename(defaultextension=".zip", filetypes=[("ZIP files", "*.zip")])
         if path:
             self.zip_output_path.set(path)
 
-    def start_zipping(self):
+    def _start_zipping(self):
         folder = self.folder_to_zip.get()
         zip_path = self.zip_output_path.get()
         if not folder or not zip_path:
-            messagebox.showwarning("Missing Info", "Please select both a folder and save location.")
+            messagebox.showwarning("Missing Info", "Please select both a folder and a save location.")
             return
+        self.status_zip.configure(text="Starting compression…")
+        self.progress_zip.set(0)
+        threading.Thread(target=self._create_zip, args=(folder, zip_path), daemon=True).start()
 
-        self.progress_bar_zip['value'] = 0
-        self.status_label_zip.config(text="Starting compression...")
-        threading.Thread(target=self.create_zip, args=(folder, zip_path), daemon=True).start()
-
-    def create_zip(self, folder_path, zip_path):
+    def _create_zip(self, folder_path: str, zip_path: str):
         try:
-            file_list = []
-            for root, _, files in os.walk(folder_path):
-                for file in files:
-                    file_list.append(os.path.join(root, file))
-            total = len(file_list)
+            file_list = [
+                os.path.join(root, file)
+                for root, _, files in os.walk(folder_path)
+                for file in files
+            ]
+            total = len(file_list) or 1
 
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for i, file in enumerate(file_list, 1):
-                    arcname = os.path.relpath(file, folder_path)
-                    zipf.write(file, arcname)
-                    percent = int((i / total) * 100)
-                    self.progress_bar_zip['value'] = percent
-                    self.status_label_zip.config(text=f"Compressing... {percent}%")
-                    self.master.update_idletasks()
-            self.status_label_zip.config(text="Compression complete!")
-            messagebox.showinfo("Success", f"ZIP created:\n{zip_path}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Compression failed:\n{e}")
+                    zipf.write(file, os.path.relpath(file, folder_path))
+                    percent = i / total
+                    self.progress_zip.set(percent)
+                    self.status_zip.configure(text=f"Compressing… {int(percent * 100)}%")
+                    self.update_idletasks()
 
-    # ==== Helper ====
-    def build_entry_row(self, parent, label_text, variable, browse_command):
-        frame = tk.Frame(parent)
-        frame.pack(fill='x', padx=10, pady=6)
-        tk.Label(frame, text=label_text, width=14, anchor='w').pack(side='left')
-        tk.Entry(frame, textvariable=variable, width=40).pack(side='left', padx=5, fill='x', expand=True)
-        ttk.Button(frame, text="Browse", command=browse_command).pack(side='right')
+            self.status_zip.configure(text="Compression complete ✅")
+            messagebox.showinfo("Success", f"Folder zipped to:\n{zip_path}")
+        except Exception as err:
+            messagebox.showerror("Error", f"An error occurred:\n{err}")
+
+
+# === Entry Point ===
 
 def main():
-    root = tk.Tk()
-    app = ModernWinRARClone(root)
-    root.mainloop()
+    app = WinRARCloneApp()
+    app.mainloop()
+
 
 if __name__ == "__main__":
     main()
